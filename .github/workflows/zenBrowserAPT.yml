@@ -1,0 +1,153 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Update ZEN Browser APT Repository
+
+# Controls when the workflow will run
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+  #Create: a scheduled run - using cron
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: write
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+
+  update:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: CheckOut Repository
+        uses: actions/checkout@v4
+
+      #Get Latest Release Version  
+      - name: Get Latest Zen Browser Release
+        id: release
+        run: |
+          release=$(curl -fsSL \
+            https://api.github.com/repos/zen-browser/desktop/releases/latest)
+
+          tag=$(echo "$release" | jq -r '.tag_name')
+          url=$(echo "$release" | jq -r \
+            '.assets[] | select(.name=="zen.linux-x86_64.tar.xz") | .browser_download_url')
+          
+          echo "Latest Zen release: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      #Check Current Version    
+      - name: Check current version
+        id: current
+        run: |
+          version=""
+          [ -f site/VERSION ] && version=$(cat site/VERSION)
+          echo "Current version: ${version:-none}"
+          if [ "$version" = "${{ steps.release.outputs.tag }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          
+      #Build .deb only on "changed True"   
+      - name: Build .deb
+        if: steps.current.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.release.outputs.tag }}"
+          DEBVER=$(echo "$TAG" | sed 's/b$/~beta/')   # 1.2.3b -> 1.2.3~beta (sorts before 1.2.3)
+
+          curl -fSL "${{ steps.release.outputs.url }}" -o zen.tar.xz
+
+          PKG=pkg
+          mkdir -p $PKG/opt $PKG/usr/bin $PKG/usr/share/applications $PKG/DEBIAN
+          tar -xJf zen.tar.xz -C $PKG/opt        # extracts to opt/zen
+          ln -s /opt/zen/zen $PKG/usr/bin/zen-browser
+
+          # Icon
+          install -Dm644 $PKG/opt/zen/browser/chrome/icons/default/default128.png \
+            $PKG/usr/share/icons/hicolor/128x128/apps/zen-browser.png
+
+          cat > $PKG/usr/share/applications/zen-browser.desktop <<EOF
+            [Desktop Entry]
+            Name=Zen Browser
+            Exec=/usr/bin/zen-browser %u
+            Icon=zen-browser
+            Type=Application
+            Categories=Network;WebBrowser;
+            MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+            StartupWMClass=zen
+            EOF
+            sed -i 's/^          //' $PKG/usr/share/applications/zen-browser.desktop
+
+          SIZE=$(du -sk $PKG/opt | cut -f1)
+            cat > $PKG/DEBIAN/control <<EOF
+            Package: zen-browser
+            Version: $DEBVER
+            Architecture: amd64
+            Maintainer: Your Name <you@example.com>
+            Installed-Size: $SIZE
+            Depends: libgtk-3-0, libasound2t64 | libasound2, libdbus-glib-1-2, libxtst6
+            Section: web
+            Priority: optional
+            Homepage: https://zen-browser.app
+            Description: Zen Browser
+             Unofficial repackaging of the official Zen Browser Linux tarball.
+            EOF
+            sed -i 's/^          //' $PKG/DEBIAN/control
+
+          mkdir -p site/pool/main
+          dpkg-deb --root-owner-group --build $PKG "site/pool/main/zen-browser_${DEBVER}_amd64.deb"
+
+
+      - name: Prune old versions (keep newest 2)
+        if: steps.current.outputs.changed == 'true'
+        run: |
+          cd site/pool/main
+          ls -1 zen-browser_*.deb | sort -V | head -n -2 | xargs -r rm -v
+          
+      - name: Generate and sign APT metadata
+        if: steps.current.outputs.changed == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          cd site
+          D=dists/stable
+          mkdir -p $D/main/binary-amd64
+          dpkg-scanpackages --arch amd64 pool > $D/main/binary-amd64/Packages
+          gzip -9 -k -f $D/main/binary-amd64/Packages
+
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin="Zen APT Repo" \
+            -o APT::FTPArchive::Release::Label="Zen APT Repo" \
+            -o APT::FTPArchive::Release::Suite="stable" \
+            -o APT::FTPArchive::Release::Codename="stable" \
+            -o APT::FTPArchive::Release::Architectures="amd64" \
+            -o APT::FTPArchive::Release::Components="main" \
+            release $D > $D/Release
+
+          GPGOPTS="--batch --yes --pinentry-mode loopback --passphrase $GPG_PASSPHRASE"
+          gpg $GPGOPTS --clearsign -o $D/InRelease $D/Release
+          gpg $GPGOPTS -abs -o $D/Release.gpg $D/Release
+
+          echo "${{ steps.release.outputs.tag }}" > VERSION
+          touch .nojekyll
+          
+      - name: Publish to GitHub Pages
+        if: steps.current.outputs.changed == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./site
+          force_orphan: true
+          exclude_assets: ".git,.github"
