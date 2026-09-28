@@ -1,4 +1,4 @@
-# ZenBrowser
+# ZenBrowser AMD64 Only
 Download Zen Browser using apt
 
 Pulls from Official Zen Desktop GitHub -- Creates GitHub Pages APT Style
