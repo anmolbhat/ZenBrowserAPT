@@ -1,66 +1,73 @@
-# This is a basic workflow to help you get started with Actions
-
 name: Update ZEN Browser APT Repository
 
-# Controls when the workflow will run
 on:
-  # Allows you to run this workflow manually from the Actions tab
+  # Run manually from the Actions tab
   workflow_dispatch:
 
-  #Create: a scheduled run - using cron
+  # Scheduled run (03:00 UTC daily)
   schedule:
     - cron: "0 3 * * *"
 
 permissions:
-  contents: write
+  contents: read
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-
   update:
-
     runs-on: ubuntu-latest
     environment: github-pages
+    env:
+      SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+    outputs:
+      changed: ${{ steps.current.outputs.changed }}
 
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - name: CheckOut Repository
-        uses: actions/checkout@v4
-
-      #Get Latest Release Version  
+      # Get latest release version and tarball URL
       - name: Get Latest Zen Browser Release
         id: release
         run: |
-          release=$(curl -fsSL \
+          release=$(curl -fsSL -H "Authorization: Bearer ${{ github.token }}" \
             https://api.github.com/repos/zen-browser/desktop/releases/latest)
 
           tag=$(echo "$release" | jq -r '.tag_name')
           url=$(echo "$release" | jq -r \
             '.assets[] | select(.name=="zen.linux-x86_64.tar.xz") | .browser_download_url')
-          
+
           echo "Latest Zen release: $tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      #Check Current Version    
+      # Compare with the version currently published on the live site
       - name: Check current version
         id: current
         run: |
-          version=""
-          [ -f site/VERSION ] && version=$(cat site/VERSION)
+          version=$(curl -fsSL "$SITE_URL/VERSION" 2>/dev/null || true)
           echo "Current version: ${version:-none}"
           if [ "$version" = "${{ steps.release.outputs.tag }}" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-          
-      #Build .deb only on "changed True"         
+
+      # Bring back the previously published deb(s) so we can keep an older version
+      - name: Fetch previous debs from live site
+        if: steps.current.outputs.changed == 'true'
+        run: |
+          mkdir -p site/pool/main
+          if curl -fsSL "$SITE_URL/dists/stable/main/binary-amd64/Packages" -o /tmp/Packages; then
+            grep '^Filename:' /tmp/Packages | cut -d' ' -f2 | while read -r f; do
+              echo "Fetching previous: $f"
+              curl -fSL "$SITE_URL/$f" -o "site/$f"
+            done
+          else
+            echo "No published repo yet (first run)"
+          fi
+
+      # Build .deb only when there is a new version
       - name: Build .deb
         if: steps.current.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          
+
           TAG="${{ steps.release.outputs.tag }}"
           DEBVER=$(echo "$TAG" | sed 's/b$/~beta/')
 
@@ -69,7 +76,7 @@ jobs:
           PKG=pkg
           mkdir -p $PKG/opt $PKG/usr/bin $PKG/usr/share/applications $PKG/DEBIAN
           tar -xJf zen.tar.xz -C $PKG/opt
-          ls $PKG/opt                       #sanity check: should show "Zen"
+          ls $PKG/opt                       # sanity check: should show "zen"
           ln -s /opt/zen/zen $PKG/usr/bin/zen-browser
 
           install -Dm644 $PKG/opt/zen/browser/chrome/icons/default/default128.png \
@@ -104,18 +111,17 @@ jobs:
           mkdir -p site/pool/main
           dpkg-deb --root-owner-group --build $PKG "site/pool/main/zen-browser_${DEBVER}_amd64.deb"
 
-
       - name: Prune old versions (keep newest 2)
         if: steps.current.outputs.changed == 'true'
         run: |
           cd site/pool/main
           ls -1 zen-browser_*.deb | sort -V | head -n -2 | xargs -r rm -v
-          
+
       - name: Generate and sign APT metadata
         if: steps.current.outputs.changed == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}   # empty if the secret doesn't exist
         run: |
           set -euo pipefail
           if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
@@ -125,6 +131,8 @@ jobs:
           printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
 
           cd site
+          gpg --export > zen-archive-keyring.gpg
+
           D=dists/stable
           mkdir -p $D/main/binary-amd64
           dpkg-scanpackages --arch amd64 pool > $D/main/binary-amd64/Packages
@@ -139,24 +147,33 @@ jobs:
             -o APT::FTPArchive::Release::Components="main" \
             release $D > $D/Release
 
-          GPGOPTS="--batch --yes --pinentry-mode loopback --passphrase $GPG_PASSPHRASE"
-          gpg $GPGOPTS --clearsign -o $D/InRelease $D/Release
-          gpg $GPGOPTS -abs -o $D/Release.gpg $D/Release
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            GPGOPTS=(--batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE")
+          else
+            GPGOPTS=(--batch --yes)
+          fi
+          gpg "${GPGOPTS[@]}" --clearsign -o $D/InRelease $D/Release
+          gpg "${GPGOPTS[@]}" -abs -o $D/Release.gpg $D/Release
 
           echo "${{ steps.release.outputs.tag }}" > VERSION
-          touch .nojekyll
-          
-      - name: Publish to gh-pages
+
+      - name: Upload site artifact
         if: steps.current.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          cd site
-          rm -rf .git
-          git init -b gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Zen Browser ${{ steps.release.outputs.tag }}"
-          git push --force \
-            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
-            gh-pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
