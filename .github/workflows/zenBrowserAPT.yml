@@ -98,7 +98,7 @@ jobs:
             "Package: zen-browser" \
             "Version: $DEBVER" \
             "Architecture: amd64" \
-            "Maintainer: Your Name <you@example.com>" \
+            "Maintainer: Anmol Bhat <you@example.com>" \
             "Installed-Size: $SIZE" \
             "Depends: libgtk-3-0, libasound2t64 | libasound2, libdbus-glib-1-2, libxtst6" \
             "Section: web" \
