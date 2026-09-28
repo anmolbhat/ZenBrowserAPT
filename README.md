@@ -16,3 +16,10 @@ sudo apt update
 apt policy zen-browser
 
 sudo apt install zen-browser
+
+
+#APT Style Publish at
+  #Base URl: https://anmolbhat.github.io/ZenBrowserAPT
+      #InRelease: /dists/stable/InRelease 
+      #Release: /dists/stable/Release 
+      #Packages: /dists/stable/main/binary-amd64/Packages
