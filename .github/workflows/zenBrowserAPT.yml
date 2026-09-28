@@ -117,7 +117,11 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
+            echo "::error::GPG_PRIVATE_KEY secret is missing or empty"
+            exit 1
+          fi
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
 
           cd site
           D=dists/stable
