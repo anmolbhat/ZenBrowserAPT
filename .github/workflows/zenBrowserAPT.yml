@@ -54,52 +54,51 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
           
-      #Build .deb only on "changed True"   
+      #Build .deb only on "changed True"         
       - name: Build .deb
         if: steps.current.outputs.changed == 'true'
         run: |
           set -euo pipefail
+          
           TAG="${{ steps.release.outputs.tag }}"
-          DEBVER=$(echo "$TAG" | sed 's/b$/~beta/')   # 1.2.3b -> 1.2.3~beta (sorts before 1.2.3)
+          DEBVER=$(echo "$TAG" | sed 's/b$/~beta/')
 
           curl -fSL "${{ steps.release.outputs.url }}" -o zen.tar.xz
 
           PKG=pkg
           mkdir -p $PKG/opt $PKG/usr/bin $PKG/usr/share/applications $PKG/DEBIAN
-          tar -xJf zen.tar.xz -C $PKG/opt        # extracts to opt/zen
+          tar -xJf zen.tar.xz -C $PKG/opt
+          ls $PKG/opt                       #sanity check: should show "Zen"
           ln -s /opt/zen/zen $PKG/usr/bin/zen-browser
 
-          # Icon
           install -Dm644 $PKG/opt/zen/browser/chrome/icons/default/default128.png \
             $PKG/usr/share/icons/hicolor/128x128/apps/zen-browser.png
 
-          cat > $PKG/usr/share/applications/zen-browser.desktop <<EOF
-            [Desktop Entry]
-            Name=Zen Browser
-            Exec=/usr/bin/zen-browser %u
-            Icon=zen-browser
-            Type=Application
-            Categories=Network;WebBrowser;
-            MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
-            StartupWMClass=zen
-            EOF
-            sed -i 's/^          //' $PKG/usr/share/applications/zen-browser.desktop
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=Zen Browser' \
+            'Exec=/usr/bin/zen-browser %u' \
+            'Icon=zen-browser' \
+            'Type=Application' \
+            'Categories=Network;WebBrowser;' \
+            'MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;' \
+            'StartupWMClass=zen' \
+            > $PKG/usr/share/applications/zen-browser.desktop
 
           SIZE=$(du -sk $PKG/opt | cut -f1)
-            cat > $PKG/DEBIAN/control <<EOF
-            Package: zen-browser
-            Version: $DEBVER
-            Architecture: amd64
-            Maintainer: Your Name <you@example.com>
-            Installed-Size: $SIZE
-            Depends: libgtk-3-0, libasound2t64 | libasound2, libdbus-glib-1-2, libxtst6
-            Section: web
-            Priority: optional
-            Homepage: https://zen-browser.app
-            Description: Zen Browser
-             Unofficial repackaging of the official Zen Browser Linux tarball.
-            EOF
-            sed -i 's/^          //' $PKG/DEBIAN/control
+          printf '%s\n' \
+            "Package: zen-browser" \
+            "Version: $DEBVER" \
+            "Architecture: amd64" \
+            "Maintainer: Your Name <you@example.com>" \
+            "Installed-Size: $SIZE" \
+            "Depends: libgtk-3-0, libasound2t64 | libasound2, libdbus-glib-1-2, libxtst6" \
+            "Section: web" \
+            "Priority: optional" \
+            "Homepage: https://zen-browser.app" \
+            "Description: Zen Browser" \
+            " Unofficial repackaging of the official Zen Browser Linux tarball." \
+            > $PKG/DEBIAN/control
 
           mkdir -p site/pool/main
           dpkg-deb --root-owner-group --build $PKG "site/pool/main/zen-browser_${DEBVER}_amd64.deb"
