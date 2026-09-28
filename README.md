@@ -8,5 +8,7 @@ echo "deb [signed-by=/etc/apt/keyrings/zen-archive-keyring.gpg] https://anmolbha
   | sudo tee /etc/apt/sources.list.d/zen.list
   
 sudo apt update
+
 apt policy zen-browser
+
 sudo apt install zen-browser
