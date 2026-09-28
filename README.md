@@ -5,7 +5,7 @@ Pulls from Official Zen Desktop GitHub -- Creates GitHub Pages APT Style
 
 # How to Use with APT
 
-      #Download Keyring -- Sign .dev file
+      #Download Keyring -- Sign .deb file
       sudo curl -fsSL https://anmolbhat.github.io/ZenBrowserAPT/zen-archive-keyring.gpg \
       -o /etc/apt/keyrings/zen-archive-keyring.gpg
       
