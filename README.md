@@ -1,4 +1,4 @@
-# Zen Browser APT Repository (amd64) for Debian, Ubuntu, Linux Mint & Pop!_OS
+# Zen Browser APT Workflow Repository (amd64) for Debian, Ubuntu, Linux Mint & Pop!_OS
 
 Install and auto-update [Zen Browser](https://zen-browser.app) on Debian-based Linux with plain `apt`. This is an unofficial, automatically updated `.deb` package and signed APT repository, hosted on GitHub Pages.
 
