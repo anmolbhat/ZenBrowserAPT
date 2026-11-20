@@ -164,7 +164,7 @@ jobs:
           echo "${{ steps.release.outputs.tag }}" > VERSION
            
       - name: Generate browsable index pages
-        
+        if: steps.current.outputs.changed == 'true'
         run: |
           cd site
           find . -type d | while read -r d; do
