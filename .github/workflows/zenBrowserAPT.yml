@@ -162,6 +162,25 @@ jobs:
           gpg "${GPGOPTS[@]}" -abs -o $D/Release.gpg $D/Release
 
           echo "${{ steps.release.outputs.tag }}" > VERSION
+           
+      - name: Generate browsable index pages
+        
+        run: |
+          cd site
+          find . -type d | while read -r d; do
+            {
+              echo "<!doctype html><meta charset=utf-8><title>Index of ${d#.}/</title>"
+              echo "<h1>Index of ${d#.}/</h1><ul>"
+              if [ "$d" != "." ]; then echo '<li><a href="../">../</a></li>'; fi
+              for f in "$d"/*; do
+                n=$(basename "$f")
+                [ "$n" = "index.html" ] && continue
+                [ -d "$f" ] && n="$n/"
+                echo "<li><a href=\"$n\">$n</a></li>"
+              done
+              echo "</ul>"
+            } > "$d/index.html"
+          done
 
       - name: Upload site artifact
         if: steps.current.outputs.changed == 'true'
