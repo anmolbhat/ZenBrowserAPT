@@ -3,6 +3,11 @@ name: Update ZEN Browser APT Repository
 on:
   # Run manually from the Actions tab
   workflow_dispatch:
+      inputs:
+        force:
+          description: "Rebuild even if the version is unchanged"
+          type: boolean
+          default: false
 
   # Scheduled run (03:00 UTC daily)
   schedule:
@@ -42,7 +47,7 @@ jobs:
         run: |
           version=$(curl -fsSL "$SITE_URL/VERSION" 2>/dev/null || true)
           echo "Current version: ${version:-none}"
-          if [ "$version" = "${{ steps.release.outputs.tag }}" ]; then
+          if [ "$version" = "${{ steps.release.outputs.tag }}" ] && [ "${{ inputs.force }}" != "true" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
