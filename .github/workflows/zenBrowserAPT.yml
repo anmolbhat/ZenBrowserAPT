@@ -117,6 +117,12 @@ jobs:
           cd site/pool/main
           ls -1 zen-browser_*.deb | sort -V | head -n -2 | xargs -r rm -v
 
+      - name: Install APT tooling
+        if: steps.current.outputs.changed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apt-utils dpkg-dev
+
       - name: Generate and sign APT metadata
         if: steps.current.outputs.changed == 'true'
         env:
