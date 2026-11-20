@@ -141,7 +141,7 @@ jobs:
 
           D=dists/stable
           mkdir -p $D/main/binary-amd64
-          dpkg-scanpackages --arch amd64 pool > $D/main/binary-amd64/Packages
+          dpkg-scanpackages --multiversion --arch amd64 pool > $D/main/binary-amd64/Packages
           gzip -9 -k -f $D/main/binary-amd64/Packages
 
           apt-ftparchive \
